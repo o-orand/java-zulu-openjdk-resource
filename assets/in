@@ -1,0 +1,89 @@
+#!/bin/sh
+
+set -e
+#set -x
+
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+destination=$1
+
+if [ -z "$destination" ]; then
+  echo "usage: $0 <path/to/destination>" >&2
+  exit 1
+fi
+
+# for jq
+PATH=/usr/local/bin:$PATH
+
+
+payload=$(mktemp $TMPDIR/zulu-openjdk-resource-in-request.XXXXXX)
+
+# putting things you get from stdin to payload
+cat > ${payload} <&0
+
+
+jdk_platform=$(jq -r '.source.platform // ".zip"' < ${payload})
+jdk_fallback_url=$(jq -r '.source.fallback_url // ""' < ${payload})
+current_version=$(jq -r '.version.version // ""' < ${payload})
+fetch_tarball=$(jq -r '.params.tarball != false' < ${payload})
+output_name=$(jq -r '.params.output_name // "zulu-openjdk.tar.gz"' < ${payload})
+
+if [ -z "$current_version" ]; then
+  echo "ERROR - must specify version. Payload: $(cat ${payload})"
+  exit 1
+fi
+
+mkdir -p ${destination}
+
+jdk_download_url=$(curl --retry 5 -L -fail --silent http://www.azul.com/downloads/zulu/zulu-linux/ |pup '.latest_area :parent-of(span:contains("'${jdk_platform}'")) attr{href}')
+echo "Extracted url: ${jdk_download_url}"
+if [ -z "${jdk_download_url}" ]
+then
+    if [ -z "${jdk_fallback_url}" ]
+    then
+        echo "ERROR - Cannot extract url and no fallback url defined."
+        exit 1
+    else
+        echo "Warning - Cannot extract url, use fallback url."
+        jdk_download_url=${jdk_fallback_url}
+    fi
+fi
+
+parsed_url=$(echo $jdk_download_url | tr "/" "\n"| tr "-" "\n")
+for i in  ${parsed_url}
+do
+    case $i in
+        zulu* ) zulu_version=$i;;
+        jdk* ) jdk_version=$i;;
+    esac
+done
+detected_version="${zulu_version}-${jdk_version}"
+
+echo "Detected version: ${detected_version}"
+
+if [ "${detected_version}" != "${current_version}" ]
+then
+    echo "ERROR - Detected version (${detected_version}) does not match 'in version' (${current_version})"
+    echo "ERROR - Payload: $(cat ${payload})"
+    exit 1
+fi
+
+echo "$jdk_download_url" > ${destination}/url
+echo "$current_version" > ${destination}/version
+
+if [ "$fetch_tarball" = "true" ]; then
+  curl --retry 5 --fail -L "$jdk_download_url" -o ${destination}/${output_name}
+fi
+
+jq -n '{
+  version: {
+    version: $version
+  },
+  metadata: [
+    {name: "url", value: $url}
+  ]
+}' --arg version "$current_version" --arg url "$jdk_download_url" >&3
+
+#set +x

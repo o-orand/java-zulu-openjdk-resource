@@ -1,0 +1,6 @@
+FROM orangeopensource/zulu-openjdk-resource
+
+# add scripts
+ADD / /opt/resource-test/
+RUN chmod +x /opt/resource-test/*
+

@@ -1,0 +1,70 @@
+#!/bin/sh
+
+set -e
+#set -x
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+# for jq
+PATH=/usr/local/bin:$PATH
+
+
+payload=$(mktemp $TMPDIR/zulu-openjdk-resource-request.XXXXXX)
+
+# putting things you get from stdin to payload
+cat > ${payload} <&0
+
+
+jdk_platform=$(jq -r '.source.platform // ".zip"' < ${payload})
+jdk_fallback_url=$(jq -r '.source.fallback_url // ""' < ${payload})
+current_version=$(jq -r '.version.version // ""' < ${payload})
+
+raw_html=$(mktemp $TMPDIR/zulu-openjdk-resource-html.XXXXXX)
+
+if [ -z "${current_version}" ]; then
+  echo "First execution, no current version detected. Using latest..."
+fi
+
+curl --retry 5 -L -fail --silent http://www.azul.com/downloads/zulu/zulu-linux/ -o ${raw_html}
+
+jdk_download_url=$(cat "${raw_html}" |pup '.latest_area :parent-of(span:contains("'${jdk_platform}'")) attr{href}')
+echo "Extracted url: ${jdk_download_url}"
+if [ -z "${jdk_download_url}" ]
+then
+    if [ -z "${jdk_fallback_url}" ]
+    then
+        echo "ERROR - Cannot extract url and no fallback url defined."
+        exit 1
+    else
+        echo "Warning - Cannot extract url, use fallback url."
+        jdk_download_url=${jdk_fallback_url}
+    fi
+fi
+
+parsed_url=$(echo $jdk_download_url | tr "/" "\n"| tr "-" "\n")
+for i in  ${parsed_url}
+do
+    case $i in
+        zulu* ) zulu_version=$i;;
+        jdk* ) jdk_version=$i;;
+    esac
+done
+version="${zulu_version}-${jdk_version}"
+
+echo "version found: ${version}"
+if [ -z "${version}" ]
+then
+    echo "ERROR - No version found. Payload: $(cat ${payload})"
+    exit 1
+fi
+
+if [ "${version}" != "${current_version}" ]
+then
+    echo "New version detected (previous: ${current_version})"
+    jq -n '[{"version": $version}]' --arg version "$version"  >&3
+else
+    jq -n '[]' >&3
+fi
+
+set +x
