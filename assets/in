@@ -3,7 +3,6 @@
 set -e
 #set -x
 
-
 exec 3>&1 # make stdout available as fd 3 for the result
 exec 1>&2 # redirect all output to stderr for logging
 
@@ -16,7 +15,6 @@ fi
 
 # for jq
 PATH=/usr/local/bin:$PATH
-
 
 payload=$(mktemp $TMPDIR/zulu-openjdk-resource-in-request.XXXXXX)
 
@@ -38,6 +36,7 @@ fi
 mkdir -p ${destination}
 
 jdk_download_url=$(curl --retry 5 -L -fail --silent http://www.azul.com/downloads/zulu/zulu-linux/ |pup '.latest_area :parent-of(span:contains("'${jdk_platform}'")) attr{href}')
+
 echo "Extracted url: ${jdk_download_url}"
 if [ -z "${jdk_download_url}" ]
 then
