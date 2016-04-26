@@ -1,4 +1,4 @@
-# Open JDK Early Access Resource
+# Azul Zulu JDK Resource
 
 Tracks update made to [Azul Zulu Open JDK 8 Releases](http://www.azul.com/downloads/zulu/). This resource parse http://www.azul.com/downloads/zulu/zulu-linux/ to get
  Open Jdk binairies. It's a linux x64 version.
